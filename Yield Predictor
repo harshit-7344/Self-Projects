@@ -1,0 +1,97 @@
+import numpy as np
+import pandas as pd
+import rasterio
+from sentinelhub import SHConfig, BBox, CRS, SentinelHubRequest, DataCollection
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_absolute_error, r2_score
+import streamlit as st
+import joblib
+import requests
+
+def get_ndvi_data(bbox, time_interval):
+    config = SHConfig()
+    request = SentinelHubRequest(
+        data_folder="temp_data",
+        evalscript="""
+        //VERSION=3
+        function setup() {return {input: ["B04", "B08"], output: {bands: 1}};}
+        function evaluatePixel(sample) {return [ (sample.B08 - sample.B04) / (sample.B08 + sample.B04) ];}
+        """,
+        input_data=[
+            SentinelHubRequest.input_data(
+                DataCollection.SENTINEL2_L2A,
+                time_interval=time_interval
+            )
+        ],
+        responses=[SentinelHubRequest.output_response("default", MimeType.TIFF)],
+        bbox=bbox,
+        config=config
+    )
+    return request.get_data()[0]
+
+
+def preprocess_data(soil_csv, ndvi_tiff, weather_json):
+    # Soil sensor data
+    soil_df = pd.read_csv(soil_csv)[['pH', 'N', 'P', 'K', 'Moisture']]
+    
+    # Satellite data
+    with rasterio.open(ndvi_tiff) as src:
+        ndvi = src.read(1)
+    
+    # Weather API data
+    weather_data = pd.DataFrame(weather_json['daily'])
+    
+    
+    merged_data = pd.concat([
+        soil_df.mean().to_frame().T,
+        pd.DataFrame({'NDVI': [ndvi.mean()]}),
+        weather_data[['temperature_2m_mean', 'precipitation_sum']]
+    ], axis=1)
+    
+    return merged_data
+
+# Random Forest
+def train_model(X, y):
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
+    model = RandomForestRegressor(n_estimators=100, random_state=42)
+    model.fit(X_train, y_train)
+    return model, X_test, y_test
+
+def yield_dashboard():
+    st.title("AI Crop Yield Predictor")
+    st.subheader("Integrated with Xpert's Geospatial Analytics")
+    
+   
+    with st.sidebar:
+        st.header("Field Parameters")
+        ph = st.slider("Soil pH", 4.0, 8.5, 6.2)
+        nitrogen = st.slider("Nitrogen (kg/ha)", 0, 200, 120)
+        precipitation = st.slider("Expected Rainfall (mm)", 0, 300, 150)
+    
+    # Model prediction
+    model = joblib.load('yield_model.pkl')
+    input_data = pd.DataFrame([[ph, nitrogen, precipitation]], 
+                             columns=['pH', 'N', 'precipitation_sum'])
+    
+    prediction = model.predict(input_data)[0]
+    st.metric("Predicted Yield", f"{prediction:.2f} tons/ha")
+    
+    # Geospatial visualization
+    st.subheader("Field Health Map")
+    st.map(pd.DataFrame({'lat': [22.3460], 'lon': [87.2320]}))  # IIT Kharagpur coordinates
+
+if __name__ == "__main__":
+    # Example execution flow
+    soil_data = "sensor_data.csv"
+    weather_api = "https://api.open-meteo.com/v1/forecast"
+    
+  
+    bbox = BBox([87.20, 22.30, 87.25, 22.35], crs=CRS.WGS84)
+    ndvi = get_ndvi_data(bbox, ("2024-01-01", "2024-12-31"))
+ 
+    X, y = load_historical_data()  # Implement your data loader
+    trained_model, X_test, y_test = train_model(X, y)
+    joblib.dump(trained_model, 'yield_model.pkl')
+    
+    yield_dashboard()
