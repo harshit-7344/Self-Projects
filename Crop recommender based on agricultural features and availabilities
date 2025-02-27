@@ -1,0 +1,63 @@
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import accuracy_score
+
+# Features: Nitrogen (N), Phosphorus (P), Potassium (K), Temperature (°C),
+# Humidity (%), pH, and Rainfall (mm)
+data = {
+    'N': [90, 85, 100, 110, 75, 80, 120, 70],
+    'P': [42, 40, 45, 50, 38, 35, 55, 32],
+    'K': [43, 44, 40, 47, 39, 38, 46, 36],
+    'temperature': [20, 22, 21, 23, 19, 18, 24, 17],
+    'humidity': [80, 75, 85, 70, 90, 95, 65, 88],
+    'pH': [6.5, 6.8, 6.2, 7.0, 6.4, 6.3, 7.1, 6.0],
+    'rainfall': [200, 180, 220, 250, 160, 150, 260, 140],
+    'crop': ['rice', 'wheat', 'rice', 'wheat', 'maize', 'maize', 'wheat', 'maize']
+}
+
+df = pd.DataFrame(data)
+
+X = df.drop('crop', axis=1)
+y = df['crop']
+
+# Split the data into training and testing sets
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.25, random_state=42)
+
+# Random Forest Classifier
+model = RandomForestClassifier(n_estimators=100, random_state=42)
+model.fit(X_train, y_train)
+
+# Evaluate the model
+y_pred = model.predict(X_test)
+accuracy = accuracy_score(y_test, y_pred)
+print("Model accuracy: {:.2f}%".format(accuracy * 100))
+
+# predict crop recommendation based on input features
+def recommend_crop(features):
+    """
+    Predict the recommended crop based on input features.
+    
+    Parameters:
+      features (dict): A dictionary with keys: N, P, K, temperature, humidity, pH, rainfall
+      
+    Returns:
+      str: Recommended crop name
+    """
+    input_df = pd.DataFrame([features])
+    prediction = model.predict(input_df)
+    return prediction[0]
+
+#  Define a sample set of features
+sample_features = {
+    'N': 95,
+    'P': 43,
+    'K': 42,
+    'temperature': 21,
+    'humidity': 80,
+    'pH': 6.7,
+    'rainfall': 210
+}
+
+recommended_crop = recommend_crop(sample_features)
+print("Recommended Crop:", recommended_crop)
